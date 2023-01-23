@@ -1,13 +1,15 @@
-use std::net::Ipv6MulticastScope::RealmLocal;
+
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::atomic::{fence, AtomicUsize};
 
+#[derive(Debug)]
 struct ArcData<T> {
     ref_count: AtomicUsize,
     data: T,
 }
 
+#[derive(Debug)]
 pub struct Arc<T> {
     ptr: NonNull<ArcData<T>>,
 }
@@ -61,6 +63,7 @@ impl<T> Drop for Arc<T> {
 fn test() {
     static NUM_DROPS: AtomicUsize = AtomicUsize::new(0);
 
+    #[derive(Debug)]
     struct DetectDrop;
 
     impl Drop for DetectDrop {
@@ -69,12 +72,14 @@ fn test() {
         }
     }
 
-    let x = Arc::new(("hello", DetectDrop));
-    let y = x.clone();
+    let mut x = Arc::new(("hello", DetectDrop));
+    let mut y = x.clone();
 
     let t = std::thread::spawn(move || {
         // let x2 =
         assert_eq!(x.data().data.0, "hello");
+        let attempted_mut = Arc::get_mut(&mut x);
+        assert!(attempted_mut.is_none());
     });
 
     assert_eq!(y.data().data.0, "hello");
@@ -83,6 +88,12 @@ fn test() {
 
     assert_eq!(NUM_DROPS.load(Relaxed), 0);
 
+    {
+        let attempted_mut_y = Arc::get_mut(&mut y).unwrap();
+        attempted_mut_y.0 = "something else";
+    }
+
+    assert_eq!(y.data().data.0, "something else");
     drop(y);
 
     assert_eq!(NUM_DROPS.load(Relaxed), 1);
